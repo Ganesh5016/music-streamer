@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"UTF-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+  <title>Music Streamer</title>
+  <link href=\"https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap\" rel=\"stylesheet\" />
+  <style>
+    :root {
+      --bg: rgba(10, 10, 12, 0.85);
+      --glass: rgba(255, 255, 255, 0.12);
+      --primary: #1db954;
+      --text: #e0e0e0;
+      --radius: 12px;
+      --shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    }
+    body {
+      margin: 0;
+      font-family: \"Roboto\", sans-serif;
+      background: url(\"https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4\") no-repeat center fixed;
+      background-size: cover;
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .glass {
+      background: var(--glass);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1rem;
+      margin: 1rem;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    h1 { margin: 0; font-weight: 500; }
+    #searchInput {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: var(--radius);
+      width: 250px;
+    }
+    #songList, #playlistList {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    .card {
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .card:hover { transform: scale(1.03); }
+    .card img { width: 100%; border-radius: var(--radius); }
+    .card .info { padding: 0.5rem 0; }
+    .player {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 1rem;
+    }
+    .controls button { background: none; border: none; color: var(--text); font-size: 1.2rem; margin: 0 0.5rem; cursor: pointer; }
+    .toast {
+      position: fixed; top: 1rem; right: 1rem; background: var(--primary); color: #fff; padding: 0.75rem 1.25rem; border-radius: var(--radius); opacity: 0; transition: opacity 0.4s;
+    }
+    .toast.show { opacity: 1; }
+    @media (max-width: 600px) {
+      #searchInput { width: 150px; }
+    }
+  </style>
+</head>
+<body>
+  <div class=\"glass\">
+    <header>
+      <h1>Music Streamer</h1>
+      <input type=\"text\" id=\"searchInput\" placeholder=\"Search songs...\" />
+    </header>
+    <section id=\"songSection\">
+      <h2>Songs</h2>
+      <div id=\"songList\"></div>
+    </section>
+    <section id=\"playlistSection\">
+      <h2>My Playlists</h2>
+      <button id=\"newPlaylistBtn\">+ New Playlist</button>
+      <div id=\"playlistList\"></div>
+    </section>
+  </div>
+  <div class=\"player glass\">
+    <div class=\"now-playing\">Select a song</div>
+    <div class=\"controls\">
+      <button id=\"prevBtn\">⏮️</button>
+      <button id=\"playPauseBtn\">▶️</button>
+      <button id=\"nextBtn\">⏭️</button>
+    </div>
+    <audio id=\"audioPlayer\" preload=\"metadata\"></audio>
+  </div>
+  <div id=\"toast\" class=\"toast\"></div>
+  <script>
+    const apiBase = '/api';
+    const state = {
+      songs: [],
+      playlists: [],
+      currentPlaylist: null,
+      currentSongIndex: -1,
+      isPlaying: false,
+    };
+    const audio = document.getElementById('audioPlayer');
+    const toast = document.getElementById('toast');
+    // Utility
+    function showToast(msg) { toast.textContent = msg; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000); }
+    // Fetch songs
+    async function loadSongs() {
+      const res = await fetch(`${apiBase}/songs`);
+      const data = await res.json();
+      state.songs = data;
+      renderSongList(data);
+    }
+    function renderSongList(list) {
+      const container = document.getElementById('songList');
+      container.innerHTML = '';
+      list.forEach(song => {
+        const card = document.createElement('div');
+        card.className = 'card glass';
+        card.innerHTML = `
+          <img src="${song.artwork}" alt="${song.title}" />
+          <div class="info"><strong>${song.title}</strong><br/>${song.artist}</div>
+        `;
+        card.addEventListener('click', () => playSongFromList(song.id));
+        container.appendChild(card);
+      });
+    }
+    // Search
+    document.getElementById('searchInput').addEventListener('input', e => {
+      const term = e.target.value.toLowerCase();
+      const filtered = state.songs.filter(s => s.title.toLowerCase().includes(term) || s.artist.toLowerCase().includes(term));
+      renderSongList(filtered);
+    });
+    // Play logic
+    function playSongFromList(id) {
+      const idx = state.songs.findIndex(s => s.id === id);
+      if (idx === -1) return;
+      state.currentPlaylist = null; // standalone song
+      state.currentSongIndex = idx;
+      loadAndPlay(state.songs[idx]);
+    }
+    function loadAndPlay(song) {
+      audio.src = song.url;
+      audio.play();
+      state.isPlaying = true;
+      document.getElementById('playPauseBtn').textContent = '⏸️';
+      document.querySelector('.now-playing').textContent = `${song.title} – ${song.artist}`;
+    }
+    // Player controls
+    document.getElementById('playPauseBtn').addEventListener('click', () => {
+      if (state.isPlaying) { audio.pause(); state.isPlaying = false; document.getElementById('playPauseBtn').textContent = '▶️'; }
+      else { audio.play(); state.isPlaying = true; document.getElementById('playPauseBtn').textContent = '⏸️'; }
+    });
+    document.getElementById('prevBtn').addEventListener('click', () => skip(-1));
+    document.getElementById('nextBtn').addEventListener('click', () => skip(1));
+    function skip(dir) {
+      if (state.currentPlaylist) {
+        const pl = state.playlists.find(p => p.id === state.currentPlaylist);
+        if (!pl) return;
+        const songs = pl.songs;
+        const newIdx = (state.currentSongIndex + dir + songs.length) % songs.length;
+        const song = state.songs.find(s => s.id === songs[newIdx]);
+        state.currentSongIndex = newIdx;
+        loadAndPlay(song);
+      }
+    }
+    audio.addEventListener('ended', () => skip(1));
+    // Playlists CRUD
+    async function loadPlaylists() {
+      const res = await fetch(`${apiBase}/playlists`);
+      const data = await res.json();
+      state.playlists = data;
+      renderPlaylists();
+    }
+    function renderPlaylists() {
+      const container = document.getElementById('playlistList');
+      container.innerHTML = '';
+      state.playlists.forEach(pl => {
+        const card = document.createElement('div');
+        card.className = 'card glass';
+        card.innerHTML = `<div class="info"><strong>${pl.name}</strong> (${pl.songs.length} songs)</div>`;
+        const playBtn = document.createElement('button');
+        playBtn.textContent = '▶️ Play';
+        playBtn.addEventListener('click', () => playPlaylist(pl.id));
+        const delBtn = document.createElement('button');
+        delBtn.textContent = '🗑️ Delete';
+        delBtn.addEventListener('click', () => deletePlaylist(pl.id));
+        card.appendChild(playBtn);
+        card.appendChild(delBtn);
+        container.appendChild(card);
+      });
+    }
+    async function playPlaylist(id) {
+      const pl = state.playlists.find(p => p.id === id);
+      if (!pl || pl.songs.length === 0) { showToast('Playlist empty'); return; }
+      state.currentPlaylist = id;
+      state.currentSongIndex = 0;
+      const songId = pl.songs[0];
+      const song = state.songs.find(s => s.id === songId);
+      loadAndPlay(song);
+    }
+    async function deletePlaylist(id) {
+      await fetch(`${apiBase}/playlists/${id}`, { method: 'DELETE' });
+      showToast('Playlist deleted');
+      loadPlaylists();
+    }
+    // New playlist modal (simple prompt for demo)
+    document.getElementById('newPlaylistBtn').addEventListener('click', async () => {
+      const name = prompt('Playlist name:');
+      if (!name) return;
+      const selected = Array.from(document.querySelectorAll('#songList .card')).filter(c => c.classList.contains('selected'));
+      const songIds = selected.map(c => c.dataset.id);
+      await fetch(`${apiBase}/playlists`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, songIds })
+      });
+      showToast('Playlist created');
+      loadPlaylists();
+    });
+    // Persist selected songs for playlist creation
+    document.getElementById('songList').addEventListener('click', e => {
+      const card = e.target.closest('.card');
+      if (!card) return;
+      const id = card.querySelector('img').src; // not used
+    });
+    // Init
+    (async () => {
+      await loadSongs();
+      await loadPlaylists();
+    })();
+  </script>
+</body>
+</html>
